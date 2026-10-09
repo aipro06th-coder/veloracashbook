@@ -20,7 +20,7 @@ import {
   deleteTransaction 
 } from '../lib/storage';
 import { getStoredFirebaseConfig } from '../lib/firebase';
-import { ArrowDownLeft, ArrowUpRight, Plus, Cloud, Database } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, Plus, Cloud, Database, WifiOff, AlertTriangle } from 'lucide-react';
 
 export default function Home() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -31,11 +31,31 @@ export default function Home() {
   const [isFirebaseModalOpen, setIsFirebaseModalOpen] = useState(false);
   const [isPartyModalOpen, setIsPartyModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isOnline, setIsOnline] = useState<boolean>(true);
 
   // Check Firebase connection status
   const checkFirebaseStatus = useCallback(() => {
     const config = getStoredFirebaseConfig();
     setIsFirebaseConnected(Boolean(config && config.apiKey && config.projectId));
+  }, []);
+
+  // Online / Offline listener
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setIsOnline(navigator.onLine);
+      const onOnline = () => {
+        setIsOnline(true);
+      };
+      const onOffline = () => {
+        setIsOnline(false);
+      };
+      window.addEventListener('online', onOnline);
+      window.addEventListener('offline', onOffline);
+      return () => {
+        window.removeEventListener('online', onOnline);
+        window.removeEventListener('offline', onOffline);
+      };
+    }
   }, []);
 
   // Subscribe to transactions
@@ -110,7 +130,10 @@ export default function Home() {
     if (editingTx) {
       await updateTransaction(editingTx.id, data);
     } else {
-      await addTransaction(data);
+      const res = await addTransaction(data);
+      if (res.isOffline) {
+        alert("⚠️ ALERT: App is currently OFFLINE!\n\nInternet connection band hai. Yeh data cloud database par upload NAHI hua, balkay aapke local device mein mehfooz kar liya gaya hai.");
+      }
     }
   };
 
@@ -166,7 +189,7 @@ export default function Home() {
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col selection:bg-emerald-500 selection:text-white">
       {/* Navbar */}
       <Navbar
-        isFirebaseConnected={isFirebaseConnected}
+        isFirebaseConnected={isFirebaseConnected && isOnline}
         onOpenInModal={handleOpenInModal}
         onOpenOutModal={handleOpenOutModal}
         onOpenFirebaseModal={() => setIsFirebaseModalOpen(true)}
@@ -176,8 +199,36 @@ export default function Home() {
 
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-5 pb-24 md:pb-8">
+        {/* Offline Warning Alert Banner */}
+        {!isOnline && (
+          <div className="rounded-2xl p-4 bg-gradient-to-r from-rose-950/80 via-rose-900/50 to-slate-900 border border-rose-500/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xl animate-pulse">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-500/20 flex items-center justify-center text-rose-400 shrink-0">
+                <WifiOff className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="text-sm font-bold text-rose-300 flex items-center gap-2">
+                  <span>⚠️ App is Currently OFFLINE</span>
+                  <span className="text-[10px] uppercase px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                    Upload Paused
+                  </span>
+                </h4>
+                <p className="text-xs text-rose-200/80">
+                  Internet connection band hai. Nayi transactions database par upload nahi hongi, sirf local device mein mehfooz ki ja rahi hain.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => alert("Internet aane par tamam offline data automatically cloud par sync ho jayega.")}
+              className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-rose-600/40 hover:bg-rose-600/60 text-rose-100 border border-rose-500/40 transition self-start sm:self-auto cursor-pointer"
+            >
+              Offline Protection Active
+            </button>
+          </div>
+        )}
+
         {/* Firebase Cloud Sync Banner if not connected */}
-        {!isFirebaseConnected && (
+        {isOnline && !isFirebaseConnected && (
           <div className="rounded-2xl p-4 bg-gradient-to-r from-amber-950/40 via-amber-900/20 to-slate-900 border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-400 shrink-0">

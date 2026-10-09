@@ -107,53 +107,71 @@ export function subscribeToTransactions(
   };
 }
 
-export async function addTransaction(data: Omit<Transaction, "id" | "createdAt">): Promise<Transaction> {
+export function isOnline(): boolean {
+  if (typeof navigator !== "undefined" && typeof navigator.onLine === "boolean") {
+    return navigator.onLine;
+  }
+  return true;
+}
+
+export async function addTransaction(
+  data: Omit<Transaction, "id" | "createdAt">
+): Promise<{ transaction: Transaction; isOffline: boolean }> {
   const newTx: Transaction = {
     ...data,
     id: `tx-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
     createdAt: Date.now(),
   };
 
-  const { db } = getFirebaseInstance();
+  const online = isOnline();
+  let isOffline = !online;
 
-  if (db) {
-    try {
-      const docRef = await addDoc(collection(db, "transactions"), {
-        type: newTx.type,
-        amount: newTx.amount,
-        category: newTx.category,
-        partyName: newTx.partyName || "",
-        paymentMethod: newTx.paymentMethod,
-        description: newTx.description || "",
-        date: newTx.date,
-        createdAt: newTx.createdAt,
-      });
-      newTx.id = docRef.id;
-    } catch (err) {
-      console.error("Firestore add error, falling back to local save:", err);
+  // STRICT RULE: If offline, do NOT upload to database!
+  if (online) {
+    const { db } = getFirebaseInstance();
+    if (db) {
+      try {
+        const docRef = await addDoc(collection(db, "transactions"), {
+          type: newTx.type,
+          amount: newTx.amount,
+          category: newTx.category,
+          partyName: newTx.partyName || "",
+          paymentMethod: newTx.paymentMethod,
+          description: newTx.description || "",
+          date: newTx.date,
+          createdAt: newTx.createdAt,
+        });
+        newTx.id = docRef.id;
+      } catch (err) {
+        console.warn("Firestore upload failed, saving offline:", err);
+        isOffline = true;
+      }
     }
   }
 
-  // Always update local storage
+  // Save to local storage
   const current = getLocalTransactions();
   const updated = [newTx, ...current.filter((t) => t.id !== newTx.id)];
   saveLocalTransactions(updated);
 
-  return newTx;
+  return { transaction: newTx, isOffline };
 }
 
 export async function updateTransaction(id: string, updates: Partial<Transaction>): Promise<void> {
-  const { db } = getFirebaseInstance();
+  const online = isOnline();
 
-  if (db) {
-    try {
-      const docRef = doc(db, "transactions", id);
-      await updateDoc(docRef, {
-        ...updates,
-        updatedAt: Date.now(),
-      });
-    } catch (err) {
-      console.error("Firestore update error:", err);
+  if (online) {
+    const { db } = getFirebaseInstance();
+    if (db) {
+      try {
+        const docRef = doc(db, "transactions", id);
+        await updateDoc(docRef, {
+          ...updates,
+          updatedAt: Date.now(),
+        });
+      } catch (err) {
+        console.error("Firestore update error:", err);
+      }
     }
   }
 
@@ -163,14 +181,17 @@ export async function updateTransaction(id: string, updates: Partial<Transaction
 }
 
 export async function deleteTransaction(id: string): Promise<void> {
-  const { db } = getFirebaseInstance();
+  const online = isOnline();
 
-  if (db) {
-    try {
-      const docRef = doc(db, "transactions", id);
-      await deleteDoc(docRef);
-    } catch (err) {
-      console.error("Firestore delete error:", err);
+  if (online) {
+    const { db } = getFirebaseInstance();
+    if (db) {
+      try {
+        const docRef = doc(db, "transactions", id);
+        await deleteDoc(docRef);
+      } catch (err) {
+        console.error("Firestore delete error:", err);
+      }
     }
   }
 

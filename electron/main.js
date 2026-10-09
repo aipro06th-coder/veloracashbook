@@ -57,8 +57,10 @@ function getFullUrl() {
   if (process.argv.includes('--local')) {
     return 'http://localhost:3000';
   }
-  // Otherwise, ALWAYS connect directly to live Vercel URL!
-  return VERCEL_URL;
+  if (currentConfig && currentConfig.mode === 'custom' && currentConfig.customUrl) {
+    return currentConfig.customUrl;
+  }
+  return (currentConfig && currentConfig.vercelUrl) || VERCEL_URL;
 }
 
 function createWindow() {
@@ -215,6 +217,18 @@ function promptChangeIpAddress() {
 
 ipcMain.on('open-change-ip-modal', () => {
   promptChangeIpAddress();
+});
+
+ipcMain.on('notify-offline', () => {
+  if (mainWindow) {
+    mainWindow.setTitle(`[OFFLINE - Database Upload Paused] CashBook Pro (${getFullUrl()})`);
+  }
+});
+
+ipcMain.on('notify-online', () => {
+  if (mainWindow) {
+    mainWindow.setTitle(`[ONLINE - Sync Active] CashBook Pro (${getFullUrl()})`);
+  }
 });
 
 ipcMain.on('update-ip-config', (event, { mode, vercelUrl, customUrl }) => {
