@@ -58,9 +58,6 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <h1 className="text-xl font-extrabold text-white tracking-tight flex items-center gap-1.5">
                   Velora CashBook <span className="text-emerald-400 font-black">Factory</span>
                 </h1>
-                <span className="hidden sm:inline-block text-[11px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                  Business Flow
-                </span>
               </div>
               <p className="text-xs text-slate-400 font-medium hidden sm:block">
                 Daily Hisab Kitab & Real-Time Cash Flow Ledger • {todayFormatted}
