@@ -6,7 +6,6 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   Database,
-  Users,
   Download,
   Lock,
   LogOut,
@@ -91,15 +90,6 @@ export const Navbar: React.FC<NavbarProps> = ({
               )}
             </button>
 
-            {/* Parties / Khata Ledger */}
-            <button
-              onClick={onOpenPartyModal}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium bg-slate-900 text-slate-200 border border-slate-750 hover:bg-slate-800 hover:text-white transition-all cursor-pointer"
-              title="Customer & Supplier Ledger (Len Den)"
-            >
-              <Users className="w-4 h-4 text-cyan-400" />
-              <span className="hidden sm:inline">Parties & Khata</span>
-            </button>
 
             {/* Export CSV */}
             <button
