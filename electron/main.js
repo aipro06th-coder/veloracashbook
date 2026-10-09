@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 
-// Config file path for persisting assigned IP address and port
+const VERCEL_DEFAULT_URL = 'https://veloracashbook.vercel.app';
 const configPath = path.join(app.getPath('userData'), 'casbook-electron-config.json');
 
 function getSavedConfig() {
@@ -16,9 +16,9 @@ function getSavedConfig() {
     console.error('Error reading config:', err);
   }
   return {
-    serverIp: 'localhost',
-    serverPort: '3000',
-    protocol: 'http',
+    mode: 'vercel', // 'vercel' or 'custom'
+    customUrl: 'http://localhost:3000',
+    vercelUrl: VERCEL_DEFAULT_URL,
   };
 }
 
@@ -30,7 +30,6 @@ function saveConfig(config) {
   }
 }
 
-// Find local Wi-Fi / Ethernet IPv4 addresses
 function getLocalIpAddresses() {
   const interfaces = os.networkInterfaces();
   const addresses = [];
@@ -48,21 +47,23 @@ let mainWindow = null;
 let currentConfig = getSavedConfig();
 
 function getFullUrl() {
-  // Can be overridden via command-line arguments: --server=http://192.168.1.10:3000
   const argServer = process.argv.find((arg) => arg.startsWith('--server='));
   if (argServer) {
     return argServer.replace('--server=', '');
   }
-  return `${currentConfig.protocol || 'http'}://${currentConfig.serverIp || 'localhost'}:${currentConfig.serverPort || '3000'}`;
+  if (currentConfig.mode === 'custom' && currentConfig.customUrl) {
+    return currentConfig.customUrl;
+  }
+  return currentConfig.vercelUrl || VERCEL_DEFAULT_URL;
 }
 
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1240,
     height: 840,
-    minWidth: 380, // allows resizing to mobile screen width!
+    minWidth: 380,
     minHeight: 600,
-    title: 'CashBook Pro - Business Cash Flow',
+    title: 'CashBook Pro - Velora CashBook',
     backgroundColor: '#020617',
     webPreferences: {
       nodeIntegration: false,
@@ -72,7 +73,7 @@ function createWindow() {
   });
 
   const targetUrl = getFullUrl();
-  console.log('Loading CashBook Pro at:', targetUrl);
+  console.log('Loading CashBook Pro in Electron from:', targetUrl);
 
   mainWindow.loadURL(targetUrl).catch((err) => {
     console.error('Failed to load URL:', err);
@@ -87,10 +88,6 @@ function createWindow() {
 }
 
 function showConnectionErrorPage(attemptedUrl) {
-  const localIps = getLocalIpAddresses()
-    .map((item) => `<li><strong>${item.iface}:</strong> <code>http://${item.ip}:${currentConfig.serverPort}</code></li>`)
-    .join('');
-
   const html = `
     <!DOCTYPE html>
     <html>
@@ -102,21 +99,17 @@ function showConnectionErrorPage(attemptedUrl) {
           h2 { color: #f43f5e; margin-top: 0; font-size: 22px; }
           p { color: #94a3b8; font-size: 14px; line-height: 1.6; }
           code { background: #1e293b; padding: 2px 6px; border-radius: 6px; color: #38bdf8; font-family: monospace; }
-          ul { color: #cbd5e1; font-size: 13px; line-height: 1.8; padding-left: 20px; }
           .btn { background: #10b981; color: white; border: none; padding: 10px 18px; border-radius: 12px; font-weight: bold; cursor: pointer; margin-right: 10px; margin-top: 15px; font-size: 13px; }
           .btn-secondary { background: #334155; }
         </style>
       </head>
       <body>
         <div class="card">
-          <h2>⚠️ Server Connection Failed</h2>
+          <h2>⚠️ Connection Failed</h2>
           <p>Could not connect to: <code>${attemptedUrl}</code></p>
-          <p>Please ensure that Next.js server is running (<code>npm run dev</code>) or update the assigned IP address.</p>
-          
-          <p><strong>Your Local Network IP Addresses:</strong></p>
-          <ul>${localIps || '<li>localhost (127.0.0.1)</li>'}</ul>
+          <p>Please check your internet connection or switch to local server IP.</p>
 
-          <button class="btn" onclick="window.electronAPI.changeIp()">Change IP Address / Server</button>
+          <button class="btn" onclick="window.electronAPI.changeIp()">Switch Server / IP Address</button>
           <button class="btn btn-secondary" onclick="window.location.reload()">Retry Connection</button>
         </div>
       </body>
@@ -130,15 +123,15 @@ function showConnectionErrorPage(attemptedUrl) {
 
 function promptChangeIpAddress() {
   const localIps = getLocalIpAddresses()
-    .map((item) => `${item.iface}: ${item.ip}`)
+    .map((item) => `${item.iface}: http://${item.ip}:3000`)
     .join('\n');
 
   const ipPromptWindow = new BrowserWindow({
-    width: 480,
-    height: 480,
+    width: 500,
+    height: 520,
     parent: mainWindow,
     modal: true,
-    title: 'Assign IP Address',
+    title: 'Server & IP Address Configuration',
     backgroundColor: '#020617',
     resizable: false,
     webPreferences: {
@@ -153,32 +146,45 @@ function promptChangeIpAddress() {
     <!DOCTYPE html>
     <html>
       <head>
-        <title>Assign Server IP Address</title>
+        <title>Server & IP Configuration</title>
         <style>
-          body { font-family: sans-serif; background: #020617; color: white; padding: 24px; }
+          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #020617; color: white; padding: 24px; }
           h3 { margin-top: 0; color: #34d399; font-size: 18px; }
-          label { display: block; font-size: 12px; color: #94a3b8; margin-top: 12px; text-transform: uppercase; font-weight: bold; }
-          input { width: 100%; box-sizing: border-box; padding: 10px; border-radius: 8px; background: #0f172a; border: 1px solid #334155; color: white; margin-top: 4px; font-size: 14px; }
-          .hint { font-size: 11px; color: #64748b; margin-top: 4px; }
+          .option-box { background: #0f172a; border: 1px solid #1e293b; border-radius: 12px; padding: 14px; margin-top: 14px; cursor: pointer; }
+          .option-box:hover { border-color: #10b981; }
+          label { display: flex; align-items: center; gap: 8px; font-weight: bold; font-size: 13px; cursor: pointer; }
+          input[type="text"] { width: 100%; box-sizing: border-box; padding: 9px; border-radius: 8px; background: #020617; border: 1px solid #334155; color: white; margin-top: 8px; font-size: 13px; }
+          .hint { font-size: 11px; color: #64748b; margin-top: 5px; }
           .actions { margin-top: 24px; display: flex; justify-content: flex-end; gap: 8px; }
           button { padding: 9px 16px; border-radius: 8px; font-weight: bold; cursor: pointer; border: none; font-size: 13px; }
           .save { background: #10b981; color: white; }
           .cancel { background: #334155; color: #cbd5e1; }
-          .ips-box { background: #0f172a; padding: 8px 12px; border-radius: 8px; font-size: 11px; color: #38bdf8; margin-top: 10px; font-family: monospace; border: 1px solid #1e293b; }
+          .ips-box { background: #0f172a; padding: 8px 12px; border-radius: 8px; font-size: 11px; color: #38bdf8; margin-top: 8px; font-family: monospace; border: 1px solid #1e293b; }
         </style>
       </head>
       <body>
-        <h3>🌐 Assign Server IP Address</h3>
-        <p style="font-size: 12px; color: #94a3b8;">Set the host IP address where CashBook Pro is running.</p>
+        <h3>🌐 Server & IP Address Link</h3>
+        <p style="font-size: 12px; color: #94a3b8; margin-bottom: 12px;">Choose whether Electron loads the Live Vercel App or a Local Network IP.</p>
         
-        <label>Server IP / Hostname</label>
-        <input type="text" id="ipInput" value="${currentConfig.serverIp}" placeholder="e.g. 192.168.1.100 or localhost" />
+        <!-- Vercel Live Option -->
+        <div class="option-box">
+          <label>
+            <input type="radio" name="mode" value="vercel" ${currentConfig.mode === 'vercel' ? 'checked' : ''} onchange="toggleInputs()" />
+            <span>Vercel Live Cloud URL (Official Production)</span>
+          </label>
+          <input type="text" id="vercelInput" value="${currentConfig.vercelUrl || VERCEL_DEFAULT_URL}" />
+        </div>
 
-        <label>Port</label>
-        <input type="text" id="portInput" value="${currentConfig.serverPort}" placeholder="3000" />
-
-        <div class="hint">Detected Local Machine IPs:</div>
-        <div class="ips-box">${localIps.replace(/\n/g, '<br/>') || '127.0.0.1 (localhost)'}</div>
+        <!-- Custom Local IP Option -->
+        <div class="option-box">
+          <label>
+            <input type="radio" name="mode" value="custom" ${currentConfig.mode === 'custom' ? 'checked' : ''} onchange="toggleInputs()" />
+            <span>Local Machine / Custom IP Address</span>
+          </label>
+          <input type="text" id="customInput" value="${currentConfig.customUrl || 'http://localhost:3000'}" placeholder="e.g. http://192.168.1.50:3000" />
+          <div class="hint">Detected Local Network IPs:</div>
+          <div class="ips-box">${localIps.replace(/\n/g, '<br/>') || 'http://localhost:3000'}</div>
+        </div>
 
         <div class="actions">
           <button class="cancel" onclick="window.close()">Cancel</button>
@@ -187,10 +193,12 @@ function promptChangeIpAddress() {
 
         <script>
           const { ipcRenderer } = require('electron');
+          function toggleInputs() {}
           function save() {
-            const ip = document.getElementById('ipInput').value.trim() || 'localhost';
-            const port = document.getElementById('portInput').value.trim() || '3000';
-            ipcRenderer.send('update-ip-config', { ip, port });
+            const mode = document.querySelector('input[name="mode"]:checked').value;
+            const vercelUrl = document.getElementById('vercelInput').value.trim() || '${VERCEL_DEFAULT_URL}';
+            const customUrl = document.getElementById('customInput').value.trim() || 'http://localhost:3000';
+            ipcRenderer.send('update-ip-config', { mode, vercelUrl, customUrl });
             window.close();
           }
         </script>
@@ -201,13 +209,18 @@ function promptChangeIpAddress() {
   ipPromptWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(promptHtml)}`);
 }
 
-ipcMain.on('update-ip-config', (event, { ip, port }) => {
-  currentConfig.serverIp = ip;
-  currentConfig.serverPort = port;
+ipcMain.on('open-change-ip-modal', () => {
+  promptChangeIpAddress();
+});
+
+ipcMain.on('update-ip-config', (event, { mode, vercelUrl, customUrl }) => {
+  currentConfig.mode = mode;
+  currentConfig.vercelUrl = vercelUrl;
+  currentConfig.customUrl = customUrl;
   saveConfig(currentConfig);
 
   const newUrl = getFullUrl();
-  console.log('Reconnecting to updated IP:', newUrl);
+  console.log('Reconnecting Electron to:', newUrl);
   if (mainWindow) {
     mainWindow.loadURL(newUrl);
   }
@@ -218,6 +231,14 @@ function createApplicationMenu() {
     {
       label: 'CashBook Pro',
       submenu: [
+        {
+          label: 'Connect to Vercel Live...',
+          click: () => {
+            currentConfig.mode = 'vercel';
+            saveConfig(currentConfig);
+            if (mainWindow) mainWindow.loadURL(currentConfig.vercelUrl || VERCEL_DEFAULT_URL);
+          },
+        },
         {
           label: 'Assign Server IP Address...',
           accelerator: 'CmdOrCtrl+I',
@@ -247,17 +268,35 @@ function createApplicationMenu() {
       ],
     },
     {
-      label: 'Network IP Info',
-      submenu: getLocalIpAddresses().map((item) => ({
-        label: `${item.iface}: ${item.ip}`,
-        click: () => {
-          dialog.showMessageBox(mainWindow, {
-            type: 'info',
-            title: 'Network IP Address',
-            message: `Interface: ${item.iface}\nIP: ${item.ip}\nFull URL: http://${item.ip}:${currentConfig.serverPort}`,
-          });
+      label: 'Servers',
+      submenu: [
+        {
+          label: `Vercel: ${VERCEL_DEFAULT_URL}`,
+          click: () => {
+            currentConfig.mode = 'vercel';
+            saveConfig(currentConfig);
+            if (mainWindow) mainWindow.loadURL(VERCEL_DEFAULT_URL);
+          },
         },
-      })),
+        {
+          label: 'Localhost: http://localhost:3000',
+          click: () => {
+            currentConfig.mode = 'custom';
+            currentConfig.customUrl = 'http://localhost:3000';
+            saveConfig(currentConfig);
+            if (mainWindow) mainWindow.loadURL('http://localhost:3000');
+          },
+        },
+        ...getLocalIpAddresses().map((item) => ({
+          label: `${item.iface}: http://${item.ip}:3000`,
+          click: () => {
+            currentConfig.mode = 'custom';
+            currentConfig.customUrl = `http://${item.ip}:3000`;
+            saveConfig(currentConfig);
+            if (mainWindow) mainWindow.loadURL(`http://${item.ip}:3000`);
+          },
+        })),
+      ],
     },
   ];
 
