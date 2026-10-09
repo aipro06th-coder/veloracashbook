@@ -6,13 +6,10 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   Database,
-  CheckCircle2,
   Users,
-  Sparkles,
   Download,
   Lock,
   LogOut,
-  ShieldCheck,
   UserCheck
 } from 'lucide-react';
 import { AppUser } from '../lib/types';
@@ -59,7 +56,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-xl font-extrabold text-white tracking-tight flex items-center gap-1.5">
-                  Velora CashBook <span className="text-emerald-400 font-black">Factroy</span>
+                  Velora CashBook <span className="text-emerald-400 font-black">Factory</span>
                 </h1>
                 <span className="hidden sm:inline-block text-[11px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                   Business Flow
@@ -77,10 +74,11 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               onClick={onOpenFirebaseModal}
               title="Firebase Configuration & Sync Status"
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all duration-200 cursor-pointer ${isFirebaseConnected
-                ? 'bg-emerald-950/60 text-emerald-300 border-emerald-500/40 hover:bg-emerald-900/50 hover:border-emerald-400'
-                : 'bg-amber-950/60 text-amber-300 border-amber-500/40 hover:bg-amber-900/50 hover:border-amber-400'
-                }`}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all duration-200 cursor-pointer ${
+                isFirebaseConnected
+                  ? 'bg-emerald-950/60 text-emerald-300 border-emerald-500/40 hover:bg-emerald-900/50 hover:border-emerald-400'
+                  : 'bg-amber-950/60 text-amber-300 border-amber-500/40 hover:bg-amber-900/50 hover:border-amber-400'
+              }`}
             >
               <Database className="w-3.5 h-3.5" />
               <span className="hidden md:inline">

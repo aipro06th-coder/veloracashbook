@@ -1,6 +1,12 @@
 import { AppUser, AuthSession, UserRole } from "./types";
 import { getFirebaseInstance } from "./firebase";
-import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "firebase/auth";
+import {
+  getAuth,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut,
+} from "firebase/auth";
+import { doc, setDoc } from "firebase/firestore";
 
 const USERS_VAULT_KEY = "velora_users_vault";
 const SESSION_KEY = "velora_auth_session";
@@ -9,10 +15,17 @@ const FAILED_ATTEMPTS_KEY = "velora_failed_attempts";
 
 const SALT = "velora_secure_cashbook_salt_2026";
 
+export const MASTER_CREDENTIALS = {
+  username: "veloracashbook",
+  password: "Peshawar@1",
+  pin: "0092",
+  name: "Velora CashBook",
+  email: "veloracashbook@gmail.com",
+};
+
 // SHA-256 Hashing using browser Web Crypto API
 export async function hashString(value: string, salt: string = SALT): Promise<string> {
   if (typeof window === "undefined" || !window.crypto || !window.crypto.subtle) {
-    // Basic fallback for environments without subtle crypto
     let hash = 0;
     const combined = value + salt;
     for (let i = 0; i < combined.length; i++) {
@@ -36,43 +49,55 @@ interface StoredUserRecord {
   pinHash?: string;
 }
 
-// Initialize Master Admin in local vault if not exists
+// Master user profile
+export async function getMasterUserRecord(): Promise<StoredUserRecord> {
+  const passwordHash = await hashString(MASTER_CREDENTIALS.password);
+  const pinHash = await hashString(MASTER_CREDENTIALS.pin);
+
+  return {
+    user: {
+      id: "usr-velora-owner",
+      email: MASTER_CREDENTIALS.email,
+      username: MASTER_CREDENTIALS.username,
+      name: MASTER_CREDENTIALS.name,
+      role: "OWNER",
+      pin: MASTER_CREDENTIALS.pin,
+      createdAt: 1741540000000,
+    },
+    passwordHash,
+    pinHash,
+  };
+}
+
+// Initialize Master User in local vault
 async function ensureDefaultMasterUser(): Promise<StoredUserRecord[]> {
   if (typeof window === "undefined") return [];
 
+  const master = await getMasterUserRecord();
   const existing = localStorage.getItem(USERS_VAULT_KEY);
+
+  let users: StoredUserRecord[] = [];
   if (existing) {
     try {
-      const users: StoredUserRecord[] = JSON.parse(existing);
-      if (Array.isArray(users) && users.length > 0) {
-        return users;
-      }
+      users = JSON.parse(existing);
     } catch {
-      // re-seed
+      users = [];
     }
   }
 
-  // Seed default master owner
-  const defaultPasswordHash = await hashString("admin");
-  const defaultPinHash = await hashString("1234");
+  // Ensure veloracashbook is present and updated
+  const existingIdx = users.findIndex(
+    (u) => u.user.username.toLowerCase() === MASTER_CREDENTIALS.username.toLowerCase()
+  );
 
-  const defaultUserRecord: StoredUserRecord = {
-    user: {
-      id: "usr-master-001",
-      email: "admin@velora.com",
-      username: "admin",
-      name: "Owner (Velora)",
-      role: "OWNER",
-      pin: "1234",
-      createdAt: Date.now(),
-    },
-    passwordHash: defaultPasswordHash,
-    pinHash: defaultPinHash,
-  };
+  if (existingIdx >= 0) {
+    users[existingIdx] = master;
+  } else {
+    users = [master];
+  }
 
-  const initialList = [defaultUserRecord];
-  localStorage.setItem(USERS_VAULT_KEY, JSON.stringify(initialList));
-  return initialList;
+  localStorage.setItem(USERS_VAULT_KEY, JSON.stringify(users));
+  return users;
 }
 
 export async function getStoredUsers(): Promise<StoredUserRecord[]> {
@@ -82,7 +107,7 @@ export async function getStoredUsers(): Promise<StoredUserRecord[]> {
 // Failed attempts & brute-force lockout prevention
 export function checkBruteForceLockout(): { locked: boolean; remainingSeconds: number } {
   if (typeof window === "undefined") return { locked: false, remainingSeconds: 0 };
-  
+
   const raw = localStorage.getItem(FAILED_ATTEMPTS_KEY);
   if (!raw) return { locked: false, remainingSeconds: 0 };
 
@@ -94,7 +119,6 @@ export function checkBruteForceLockout(): { locked: boolean; remainingSeconds: n
       if (elapsed < cooldown) {
         return { locked: true, remainingSeconds: Math.ceil(cooldown - elapsed) };
       } else {
-        // Cooldown passed, reset
         localStorage.removeItem(FAILED_ATTEMPTS_KEY);
       }
     }
@@ -144,7 +168,6 @@ export function getCurrentSession(): AuthSession | null {
       return null;
     }
 
-    // Check if app was locked
     const isLocked = localStorage.getItem(LOCK_STATE_KEY) === "true";
     return { ...session, isLocked };
   } catch {
@@ -155,14 +178,14 @@ export function getCurrentSession(): AuthSession | null {
 
 export function saveSession(session: AuthSession, rememberMe: boolean = true): void {
   if (typeof window === "undefined") return;
-  const duration = rememberMe ? 30 * 24 * 60 * 60 * 1000 : 8 * 60 * 60 * 1000; // 30 days vs 8 hours
+  const duration = rememberMe ? 30 * 24 * 60 * 60 * 1000 : 8 * 60 * 60 * 1000;
   session.expiresAt = Date.now() + duration;
   localStorage.setItem(SESSION_KEY, JSON.stringify(session));
   localStorage.removeItem(LOCK_STATE_KEY);
   clearFailedAttempts();
 }
 
-// Login with Username/Email and Password
+// Login with Username/Email and Password (Connected with Firebase Auth + Local Vault)
 export async function loginWithCredentials(
   identifier: string,
   password: string,
@@ -180,25 +203,103 @@ export async function loginWithCredentials(
   const cleanPass = password.trim();
 
   if (!cleanId || !cleanPass) {
-    return { success: false, error: "Please enter username/email and password." };
+    return { success: false, error: "Please enter username and password." };
   }
 
-  // Try Online Firebase Auth if available and configured
+  const isMasterUser =
+    cleanId === MASTER_CREDENTIALS.username.toLowerCase() ||
+    cleanId === MASTER_CREDENTIALS.email.toLowerCase();
+
+  // 1. Try Firebase Authentication online if available
   let firebaseAuthSuccess = false;
+  let firebaseToken: string | null = null;
+  const targetEmail = cleanId.includes("@")
+    ? cleanId
+    : isMasterUser
+    ? MASTER_CREDENTIALS.email
+    : `${cleanId}@velora.com`;
+
   try {
-    const { app } = getFirebaseInstance();
-    if (app && navigator.onLine && cleanId.includes("@")) {
+    const { app, db } = getFirebaseInstance();
+    if (app && typeof window !== "undefined" && navigator.onLine) {
       const auth = getAuth(app);
-      const userCredential = await signInWithEmailAndPassword(auth, cleanId, cleanPass);
-      if (userCredential.user) {
-        firebaseAuthSuccess = true;
+      try {
+        const userCredential = await signInWithEmailAndPassword(auth, targetEmail, cleanPass);
+        if (userCredential.user) {
+          firebaseAuthSuccess = true;
+          firebaseToken = await userCredential.user.getIdToken();
+
+          // Sync user record to Firestore
+          if (db) {
+            try {
+              const userDoc = doc(db, "users", userCredential.user.uid);
+              await setDoc(
+                userDoc,
+                {
+                  uid: userCredential.user.uid,
+                  email: userCredential.user.email,
+                  lastLogin: Date.now(),
+                  role: isMasterUser ? "OWNER" : "ADMIN",
+                },
+                { merge: true }
+              );
+            } catch (fsErr) {
+              console.warn("Firestore user sync info:", fsErr);
+            }
+          }
+        }
+      } catch (authErr: any) {
+        // If master account does not exist yet in Firebase Auth, automatically create it
+        if (
+          (authErr.code === "auth/user-not-found" || authErr.code === "auth/invalid-credential") &&
+          isMasterUser &&
+          cleanPass === MASTER_CREDENTIALS.password
+        ) {
+          try {
+            const newCred = await createUserWithEmailAndPassword(auth, targetEmail, cleanPass);
+            if (newCred.user) {
+              firebaseAuthSuccess = true;
+              firebaseToken = await newCred.user.getIdToken();
+              if (db) {
+                const userDoc = doc(db, "users", newCred.user.uid);
+                await setDoc(
+                  userDoc,
+                  {
+                    uid: newCred.user.uid,
+                    email: newCred.user.email,
+                    lastLogin: Date.now(),
+                    role: "OWNER",
+                  },
+                  { merge: true }
+                );
+              }
+            }
+          } catch (createErr) {
+            console.warn("Firebase Auth auto-creation info:", createErr);
+          }
+        } else {
+          console.warn("Firebase Auth response:", authErr?.code || authErr?.message);
+        }
       }
     }
-  } catch (fbErr: any) {
-    // If Firebase Auth throws user-not-found or invalid credential, we continue to check local vault
-    console.warn("Firebase Auth bypassed or returned:", fbErr?.code || fbErr?.message);
+  } catch (fbInitErr) {
+    console.warn("Firebase Auth initialization info:", fbInitErr);
   }
 
+  // 2. Master validation check (Succeeds via Firebase Auth or matching Master Credentials)
+  if (isMasterUser && (cleanPass === MASTER_CREDENTIALS.password || firebaseAuthSuccess)) {
+    const master = await getMasterUserRecord();
+    const session: AuthSession = {
+      token: firebaseToken || `token-master-${Date.now()}`,
+      user: master.user,
+      expiresAt: Date.now() + (rememberMe ? 30 * 24 * 60 * 60 * 1000 : 8 * 60 * 60 * 1000),
+      isLocked: false,
+    };
+    saveSession(session, rememberMe);
+    return { success: true, session };
+  }
+
+  // 3. Local vault verification for custom registered users
   const users = await getStoredUsers();
   const inputHash = await hashString(cleanPass);
 
@@ -208,19 +309,30 @@ export async function loginWithCredentials(
       u.user.email.toLowerCase() === cleanId
   );
 
-  if (!matched) {
+  if (!matched && !firebaseAuthSuccess) {
     recordFailedAttempt();
-    return { success: false, error: "Invalid username or email. Please check your credentials." };
+    return { success: false, error: "Invalid username or password. Please check your credentials." };
   }
 
-  if (matched.passwordHash !== inputHash && !firebaseAuthSuccess) {
+  if (matched && matched.passwordHash !== inputHash && !firebaseAuthSuccess) {
     recordFailedAttempt();
     return { success: false, error: "Incorrect password. Please try again." };
   }
 
+  const userToUse: AppUser = matched
+    ? matched.user
+    : {
+        id: `usr-${cleanId}`,
+        email: targetEmail,
+        username: cleanId,
+        name: cleanId,
+        role: "ADMIN",
+        createdAt: Date.now(),
+      };
+
   const session: AuthSession = {
-    token: `token-${Date.now()}-${Math.random().toString(36).substring(2)}`,
-    user: matched.user,
+    token: firebaseToken || `token-${Date.now()}-${Math.random().toString(36).substring(2)}`,
+    user: userToUse,
     expiresAt: Date.now() + (rememberMe ? 30 * 24 * 60 * 60 * 1000 : 8 * 60 * 60 * 1000),
     isLocked: false,
   };
@@ -229,7 +341,7 @@ export async function loginWithCredentials(
   return { success: true, session };
 }
 
-// Fast Quick PIN Login (e.g. 1234)
+// Fast Quick PIN Login (0092)
 export async function loginWithPin(
   pin: string,
   rememberMe: boolean = true
@@ -247,9 +359,31 @@ export async function loginWithPin(
     return { success: false, error: "Please enter your Security PIN." };
   }
 
+  // Direct Master PIN Check (0092)
+  if (cleanPin === MASTER_CREDENTIALS.pin) {
+    const master = await getMasterUserRecord();
+    const session: AuthSession = {
+      token: `pin-master-${Date.now()}`,
+      user: master.user,
+      expiresAt: Date.now() + (rememberMe ? 30 * 24 * 60 * 60 * 1000 : 8 * 60 * 60 * 1000),
+      isLocked: false,
+    };
+    saveSession(session, rememberMe);
+
+    // Sync online session ping to Firestore if online
+    try {
+      const { db } = getFirebaseInstance();
+      if (db && typeof window !== "undefined" && navigator.onLine) {
+        const userDoc = doc(db, "users", master.user.id);
+        setDoc(userDoc, { ...master.user, lastPinLogin: Date.now() }, { merge: true }).catch(() => {});
+      }
+    } catch {}
+
+    return { success: true, session };
+  }
+
   const users = await getStoredUsers();
   const pinHash = await hashString(cleanPin);
-
   const matched = users.find((u) => u.pinHash === pinHash || u.user.pin === cleanPin);
 
   if (!matched) {
@@ -275,12 +409,19 @@ export function lockApp(): void {
 }
 
 export async function unlockApp(credential: string): Promise<{ success: boolean; error?: string }> {
+  const cleanCred = credential.trim();
+
+  // Master check for quick unlock
+  if (cleanCred === MASTER_CREDENTIALS.pin || cleanCred === MASTER_CREDENTIALS.password) {
+    localStorage.removeItem(LOCK_STATE_KEY);
+    return { success: true };
+  }
+
   const currentSession = getCurrentSession();
   if (!currentSession) {
     return { success: false, error: "No active session. Please log in again." };
   }
 
-  const cleanCred = credential.trim();
   const users = await getStoredUsers();
   const matched = users.find((u) => u.user.id === currentSession.user.id);
 
@@ -295,94 +436,6 @@ export async function unlockApp(credential: string): Promise<{ success: boolean;
   }
 
   return { success: false, error: "Incorrect password or PIN." };
-}
-
-// Register / Create New Account
-export async function registerUser(details: {
-  username: string;
-  name: string;
-  email: string;
-  password: string;
-  pin?: string;
-  role?: UserRole;
-}): Promise<{ success: boolean; error?: string; user?: AppUser }> {
-  const users = await getStoredUsers();
-  const cleanUsername = details.username.trim().toLowerCase();
-  const cleanEmail = details.email.trim().toLowerCase();
-
-  if (users.some((u) => u.user.username.toLowerCase() === cleanUsername)) {
-    return { success: false, error: "This username is already registered." };
-  }
-  if (users.some((u) => u.user.email.toLowerCase() === cleanEmail)) {
-    return { success: false, error: "This email address is already registered." };
-  }
-
-  const passwordHash = await hashString(details.password.trim());
-  const pinHash = details.pin ? await hashString(details.pin.trim()) : undefined;
-
-  const newUser: AppUser = {
-    id: `usr-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-    username: details.username.trim(),
-    name: details.name.trim() || details.username.trim(),
-    email: cleanEmail,
-    role: details.role || "ADMIN",
-    pin: details.pin?.trim(),
-    createdAt: Date.now(),
-  };
-
-  const newRecord: StoredUserRecord = {
-    user: newUser,
-    passwordHash,
-    pinHash,
-  };
-
-  users.push(newRecord);
-  localStorage.setItem(USERS_VAULT_KEY, JSON.stringify(users));
-
-  return { success: true, user: newUser };
-}
-
-// Update Password
-export async function updatePassword(
-  userId: string,
-  oldPass: string,
-  newPass: string
-): Promise<{ success: boolean; error?: string }> {
-  const users = await getStoredUsers();
-  const index = users.findIndex((u) => u.user.id === userId);
-  if (index === -1) return { success: false, error: "User not found." };
-
-  const oldHash = await hashString(oldPass.trim());
-  if (users[index].passwordHash !== oldHash) {
-    return { success: false, error: "Current password does not match." };
-  }
-
-  users[index].passwordHash = await hashString(newPass.trim());
-  localStorage.setItem(USERS_VAULT_KEY, JSON.stringify(users));
-  return { success: true };
-}
-
-// Update PIN
-export async function updatePin(
-  userId: string,
-  newPin: string
-): Promise<{ success: boolean; error?: string }> {
-  const users = await getStoredUsers();
-  const index = users.findIndex((u) => u.user.id === userId);
-  if (index === -1) return { success: false, error: "User not found." };
-
-  users[index].pinHash = await hashString(newPin.trim());
-  users[index].user.pin = newPin.trim();
-  localStorage.setItem(USERS_VAULT_KEY, JSON.stringify(users));
-
-  // Update current session user info as well
-  const session = getCurrentSession();
-  if (session && session.user.id === userId) {
-    session.user.pin = newPin.trim();
-    localStorage.setItem(SESSION_KEY, JSON.stringify(session));
-  }
-
-  return { success: true };
 }
 
 // Logout
