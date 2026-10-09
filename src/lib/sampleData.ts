@@ -1,0 +1,30 @@
+export const CATEGORIES_IN = [
+  "Sale",
+  "Deposit",
+  "Customer Recovery",
+  "Service Revenue",
+  "Commission",
+  "Investment / Capital",
+  "Loan Received",
+  "Food",
+  "Grocery",
+  "Other Income",
+];
+
+export const CATEGORIES_OUT = [
+  "Food",
+  "Salary",
+  "Bills",
+  "Petrol",
+  "Grocery",
+  "Maintenance",
+  "Labour Charge",
+  "Deposit",
+  "Shop Rent",
+  "Supplier Payment",
+  "Transportation",
+  "Office Expense",
+  "Marketing & Ads",
+  "Personal Withdrawal",
+  "Other Expense",
+];
