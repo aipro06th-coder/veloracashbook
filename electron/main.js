@@ -46,15 +46,19 @@ function getLocalIpAddresses() {
 let mainWindow = null;
 let currentConfig = getSavedConfig();
 
+const VERCEL_URL = 'https://veloracashbook.vercel.app';
+
 function getFullUrl() {
+  // If command line specifies another server (e.g. --local or --server=...)
   const argServer = process.argv.find((arg) => arg.startsWith('--server='));
   if (argServer) {
     return argServer.replace('--server=', '');
   }
-  if (currentConfig.mode === 'custom' && currentConfig.customUrl) {
-    return currentConfig.customUrl;
+  if (process.argv.includes('--local')) {
+    return 'http://localhost:3000';
   }
-  return currentConfig.vercelUrl || VERCEL_DEFAULT_URL;
+  // Otherwise, ALWAYS connect directly to live Vercel URL!
+  return VERCEL_URL;
 }
 
 function createWindow() {

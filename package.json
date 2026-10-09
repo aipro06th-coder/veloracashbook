@@ -9,7 +9,8 @@
     "start": "next start",
     "lint": "eslint",
     "electron": "electron .",
-    "electron:dev": "electron ."
+    "electron:dev": "electron .",
+    "electron:local": "electron . --local"
   },
   "dependencies": {
     "firebase": "^11.4.0",
