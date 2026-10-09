@@ -42,3 +42,22 @@ export interface FirebaseConfigState {
   messagingSenderId: string;
   appId: string;
 }
+
+export type UserRole = 'OWNER' | 'ADMIN' | 'CASHIER';
+
+export interface AppUser {
+  id: string;
+  email: string;
+  username: string;
+  name: string;
+  role: UserRole;
+  pin?: string; // 4-6 digit quick PIN hashed
+  createdAt: number;
+}
+
+export interface AuthSession {
+  token: string;
+  user: AppUser;
+  expiresAt: number;
+  isLocked?: boolean;
+}

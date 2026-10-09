@@ -9,11 +9,19 @@ import {
   CheckCircle2,
   Users,
   Sparkles,
-  Download
+  Download,
+  Lock,
+  LogOut,
+  ShieldCheck,
+  UserCheck
 } from 'lucide-react';
+import { AppUser } from '../lib/types';
 
 interface NavbarProps {
   isFirebaseConnected: boolean;
+  currentUser?: AppUser | null;
+  onLock?: () => void;
+  onLogout?: () => void;
   onOpenInModal: () => void;
   onOpenOutModal: () => void;
   onOpenFirebaseModal: () => void;
@@ -23,6 +31,9 @@ interface NavbarProps {
 
 export const Navbar: React.FC<NavbarProps> = ({
   isFirebaseConnected,
+  currentUser,
+  onLock,
+  onLogout,
   onOpenInModal,
   onOpenOutModal,
   onOpenFirebaseModal,
@@ -122,6 +133,39 @@ export const Navbar: React.FC<NavbarProps> = ({
               <ArrowUpRight className="w-4 h-4" />
               <span>Cash Out</span>
             </button>
+
+            {/* User Profile & Security Actions */}
+            {currentUser && (
+              <div className="flex items-center gap-1.5 pl-1.5 border-l border-slate-800">
+                <div
+                  title={`Logged in as ${currentUser.name} (${currentUser.role})`}
+                  className="hidden xl:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-300 font-medium"
+                >
+                  <UserCheck className="w-3.5 h-3.5 text-emerald-400" />
+                  <span className="max-w-[100px] truncate">{currentUser.name}</span>
+                </div>
+
+                {onLock && (
+                  <button
+                    onClick={onLock}
+                    title="Lock CashBook Screen"
+                    className="p-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-amber-400 transition cursor-pointer"
+                  >
+                    <Lock className="w-4 h-4" />
+                  </button>
+                )}
+
+                {onLogout && (
+                  <button
+                    onClick={onLogout}
+                    title="Sign Out / Logout"
+                    className="p-2 rounded-xl bg-slate-900 hover:bg-rose-950/60 border border-slate-800 hover:border-rose-500/40 text-slate-400 hover:text-rose-400 transition cursor-pointer"
+                  >
+                    <LogOut className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>

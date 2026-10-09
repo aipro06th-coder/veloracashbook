@@ -11,7 +11,8 @@ import { PartyLedgerModal } from '../components/PartyLedgerModal';
 import { 
   Transaction, 
   TransactionType, 
-  CashFlowSummary 
+  CashFlowSummary,
+  AuthSession 
 } from '../lib/types';
 import { 
   subscribeToTransactions, 
@@ -20,9 +21,13 @@ import {
   deleteTransaction 
 } from '../lib/storage';
 import { getStoredFirebaseConfig } from '../lib/firebase';
-import { ArrowDownLeft, ArrowUpRight, Plus, Cloud, Database, WifiOff, AlertTriangle } from 'lucide-react';
+import { getCurrentSession, lockApp, logout } from '../lib/auth';
+import { AuthScreen } from '../components/AuthScreen';
+import { ArrowDownLeft, ArrowUpRight, Plus, Cloud, Database, WifiOff, AlertTriangle, Lock } from 'lucide-react';
 
 export default function Home() {
+  const [session, setSession] = useState<AuthSession | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState<boolean>(true);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [isFirebaseConnected, setIsFirebaseConnected] = useState(true);
   const [isTxModalOpen, setIsTxModalOpen] = useState(false);
@@ -32,6 +37,23 @@ export default function Home() {
   const [isPartyModalOpen, setIsPartyModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isOnline, setIsOnline] = useState<boolean>(true);
+
+  // Check initial security session on mount
+  useEffect(() => {
+    const current = getCurrentSession();
+    setSession(current);
+    setIsAuthLoading(false);
+  }, []);
+
+  const handleLock = useCallback(() => {
+    lockApp();
+    setSession((prev) => (prev ? { ...prev, isLocked: true } : null));
+  }, []);
+
+  const handleLogout = useCallback(() => {
+    logout();
+    setSession(null);
+  }, []);
 
   // Check Firebase connection status
   const checkFirebaseStatus = useCallback(() => {
@@ -185,11 +207,47 @@ export default function Home() {
     document.body.removeChild(link);
   };
 
+  // 1. Session Loading State
+  if (isAuthLoading) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-slate-400 gap-3">
+        <div className="w-10 h-10 border-4 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin" />
+        <span className="text-xs font-semibold tracking-wider uppercase text-emerald-400">
+          Verifying Security Credentials...
+        </span>
+      </div>
+    );
+  }
+
+  // 2. Authentication Gate: If not logged in, render AuthScreen
+  if (!session) {
+    return (
+      <AuthScreen
+        onSuccess={(newSession) => setSession(newSession)}
+      />
+    );
+  }
+
+  // 3. Screen Lock Gate: If session is locked, render LockScreen
+  if (session.isLocked) {
+    return (
+      <AuthScreen
+        isLockedMode
+        currentUser={session.user}
+        onSuccess={(unlockedSession) => setSession(unlockedSession)}
+        onFullLogout={handleLogout}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col selection:bg-emerald-500 selection:text-white">
       {/* Navbar */}
       <Navbar
         isFirebaseConnected={isFirebaseConnected && isOnline}
+        currentUser={session.user}
+        onLock={handleLock}
+        onLogout={handleLogout}
         onOpenInModal={handleOpenInModal}
         onOpenOutModal={handleOpenOutModal}
         onOpenFirebaseModal={() => setIsFirebaseModalOpen(true)}
@@ -307,6 +365,15 @@ export default function Home() {
         >
           <span className={`w-2 h-2 rounded-full mb-1 ${isFirebaseConnected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
           <span className="text-[10px] font-semibold">Cloud</span>
+        </button>
+
+        <button
+          onClick={handleLock}
+          title="Lock CashBook App"
+          className="flex-1 flex flex-col items-center justify-center py-1 text-amber-400 hover:text-amber-300 transition"
+        >
+          <Lock className="w-4 h-4 mb-0.5" />
+          <span className="text-[10px] font-semibold">Lock</span>
         </button>
       </div>
 
