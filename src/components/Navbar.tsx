@@ -5,7 +5,6 @@ import {
   Wallet,
   ArrowDownLeft,
   ArrowUpRight,
-  Database,
   Download,
   Lock,
   LogOut,
@@ -66,29 +65,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Action buttons & Firebase status */}
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* Firebase Status Badge */}
-            <button
-              onClick={onOpenFirebaseModal}
-              title="Firebase Configuration & Sync Status"
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all duration-200 cursor-pointer ${
-                isFirebaseConnected
-                  ? 'bg-emerald-950/60 text-emerald-300 border-emerald-500/40 hover:bg-emerald-900/50 hover:border-emerald-400'
-                  : 'bg-amber-950/60 text-amber-300 border-amber-500/40 hover:bg-amber-900/50 hover:border-amber-400'
-              }`}
-            >
-              <Database className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">
-                {isFirebaseConnected ? 'Firebase: Syncing' : 'Connect Firebase'}
-              </span>
-              <span className="md:hidden">
-                {isFirebaseConnected ? 'Live' : 'Offline'}
-              </span>
-              {isFirebaseConnected ? (
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              ) : (
-                <span className="w-2 h-2 rounded-full bg-amber-400" />
-              )}
-            </button>
+
 
 
             {/* Export CSV */}
